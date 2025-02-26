@@ -99,4 +99,30 @@ static __always_inline void arch_enter_from_user_mode(struct pt_regs *regs)
 }
 #define arch_enter_from_user_mode arch_enter_from_user_mode
 
+static inline void arch_exit_to_user_mode_prepare(struct pt_regs *regs,
+						  unsigned long ti_work)
+{
+	ppc_exit_to_user_mode_prepare(regs, ti_work);
+}
+#define arch_exit_to_user_mode_prepare arch_exit_to_user_mode_prepare
+
+static __always_inline void arch_exit_to_user_mode(void)
+{
+#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
+	local_paca->tm_scratch = regs->msr;
+#endif
+
+	booke_load_dbcr0();
+
+	account_cpu_user_exit();
+}
+#define arch_exit_to_user_mode arch_exit_to_user_mode
+
+static inline void arch_exit_to_user_mode_work(struct pt_regs *regs,
+					       unsigned long ti_work)
+{
+	ppc_exit_to_user_mode_work(regs, ti_work);
+}
+#define arch_exit_to_user_mode_work arch_exit_to_user_mode_work
+
 #endif /* _ASM_PPC_ENTRY_COMMON_H */

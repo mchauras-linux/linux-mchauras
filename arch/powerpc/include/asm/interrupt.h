@@ -88,6 +88,15 @@ do {									\
 #define INT_SOFT_MASK_BUG_ON(regs, cond)
 #endif
 
+inline void ppc_exit_to_user_mode_prepare(struct pt_regs *regs,
+		unsigned long ti_work);
+
+/*
+ * Must be called with local irq disabled.
+ */
+inline void ppc_exit_to_user_mode_work(struct pt_regs *regs,
+		unsigned long ti_work);
+
 #ifdef CONFIG_PPC_BOOK3S_64
 extern char __end_soft_masked[];
 bool search_kernel_soft_mask_table(unsigned long addr);
