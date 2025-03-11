@@ -7,6 +7,11 @@
 #include <asm/interrupt.h>
 #include <asm/tm.h>
 
+/*
+ * flags for paca->generic_fw_flags
+ */
+#define GFW_RESTORE_ALL 0x01
+
 static __always_inline void arch_enter_from_user_mode(struct pt_regs *regs)
 {
 	if (IS_ENABLED(CONFIG_PPC_IRQ_SOFT_MASK_DEBUG))
