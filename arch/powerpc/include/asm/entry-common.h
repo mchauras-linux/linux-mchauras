@@ -8,7 +8,13 @@
 #include <asm/cputime.h>
 #include <asm/interrupt.h>
 #include <asm/stacktrace.h>
+#include <asm/switch_to.h>
 #include <asm/tm.h>
+
+/*
+ * flags for paca->generic_fw_flags
+ */
+#define GFW_RESTORE_ALL 0x01
 
 static __always_inline void arch_enter_from_user_mode(struct pt_regs *regs)
 {
@@ -101,7 +107,77 @@ static __always_inline void arch_enter_from_user_mode(struct pt_regs *regs)
 	}
 #endif // CONFIG_PPC_TRANSACTIONAL_MEM
 }
+
 #define arch_enter_from_user_mode arch_enter_from_user_mode
+
+static inline void arch_exit_to_user_mode_prepare(struct pt_regs *regs,
+		unsigned long ti_work)
+{
+	unsigned long mathflags;
+	unsigned long result = regs->result;
+
+	/* Check S0 bit in CR indicating if it's an error. */
+	if(regs->ccr & 0x10000000)
+		result = -result;
+
+	if (unlikely(ti_work & _TIF_PERSYSCALL_MASK)) {
+		if (ti_work & _TIF_RESTOREALL)
+			local_paca->generic_fw_flags |= GFW_RESTORE_ALL;
+		else
+			regs->gpr[3] = result;
+		clear_bits(_TIF_PERSYSCALL_MASK, &current_thread_info()->flags);
+	} else {
+		regs->gpr[3] = result;
+	}
+
+	if (unlikely(ti_work & _TIF_SYSCALL_DOTRACE))
+		local_paca->generic_fw_flags |= GFW_RESTORE_ALL;
+
+	if (IS_ENABLED(CONFIG_PPC_BOOK3S_64) && IS_ENABLED(CONFIG_PPC_FPU)) {
+		if (IS_ENABLED(CONFIG_PPC_TRANSACTIONAL_MEM) &&
+		    unlikely((ti_work & _TIF_RESTORE_TM))) {
+			restore_tm_state(regs);
+		} else {
+			mathflags = MSR_FP;
+
+			if (cpu_has_feature(CPU_FTR_VSX))
+				mathflags |= MSR_VEC | MSR_VSX;
+			else if (cpu_has_feature(CPU_FTR_ALTIVEC))
+				mathflags |= MSR_VEC;
+
+			/*
+			 * If userspace MSR has all available FP bits set,
+			 * then they are live and no need to restore. If not,
+			 * it means the regs were given up and restore_math
+			 * may decide to restore them (to avoid taking an FP
+			 * fault).
+			 */
+			if ((regs->msr & mathflags) != mathflags)
+				restore_math(regs);
+		}
+	}
+
+	check_return_regs_valid(regs);
+#ifdef CONFIG_PPC_TRANSACTIONAL_MEM
+	local_paca->tm_scratch = regs->msr;
+#endif
+}
+#define arch_exit_to_user_mode_prepare arch_exit_to_user_mode_prepare
+
+static __always_inline void arch_exit_to_user_mode(void)
+{
+	booke_load_dbcr0();
+
+	account_cpu_user_exit();
+}
+#define arch_exit_to_user_mode arch_exit_to_user_mode
+
+static inline void arch_exit_to_user_mode_work(struct pt_regs *regs,
+					       unsigned long ti_work)
+{
+	local_paca->generic_fw_flags |= GFW_RESTORE_ALL;
+}
+#define arch_exit_to_user_mode_work arch_exit_to_user_mode_work
 
 #endif /* CONFIG_GENERIC_ENTRY */
 #endif /* _ASM_PPC_ENTRY_COMMON_H */
